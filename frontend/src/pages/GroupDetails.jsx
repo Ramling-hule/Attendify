@@ -24,6 +24,9 @@ const GroupDetails = () => {
   const [pendingChanges, setPendingChanges] = useState([]); 
   const [isRealtimeUpdate, setIsRealtimeUpdate] = useState(false);
   
+  // NEW: State to track which row is clicked on mobile
+  const [activeRowId, setActiveRowId] = useState(null);
+  
   const API_URL = import.meta.env.VITE_API_URL || `${BASE_URL}/api`;
   const SOCKET_URL = `${BASE_URL}`;
 
@@ -39,12 +42,12 @@ const GroupDetails = () => {
       
       setGroup(groupRes.data.group);
       
-      // --- SORTING LOGIC ADDED HERE ---
+      // --- SORTING LOGIC ---
       const sortedStudents = (groupRes.data.students || []).sort((a, b) => 
         a.name.localeCompare(b.name)
       );
       setStudents(sortedStudents);
-      // --------------------------------
+      // ---------------------
 
       setHistory(historyRes.data);
       
@@ -140,14 +143,17 @@ const GroupDetails = () => {
             headers: { Authorization: `Bearer ${token}` }
         });
         setNewStudentName(""); 
-        await fetchData(); // Refresh list to show new student (and sort them)
+        await fetchData();
         toast.success("Student added");
     } catch (err) { 
         toast.error(err.response?.data?.error || "Failed to add student");
     }
   }
 
-  const confirmDeleteStudent = (studentId) => {
+  const confirmDeleteStudent = (studentId, e) => {
+    // Prevent the row click event from firing when clicking delete directly
+    e.stopPropagation(); 
+    
     toast((t) => (
       <div className="flex flex-col gap-3 items-center min-w-[200px]">
         <div className="flex items-center gap-2 text-amber-500 font-bold">
@@ -197,6 +203,11 @@ const GroupDetails = () => {
   const isToday = (dateString) => dateString === getTodayString();
   const isFuture = (dateString) => dateString > getTodayString();
 
+  // Helper to toggle row selection on mobile
+  const handleRowClick = (studentId) => {
+      setActiveRowId(prev => prev === studentId ? null : studentId);
+  };
+
   if (error) return <div className="p-8 text-center text-red-500">{error}</div>;
   if (!group) return <div className="p-8 text-center dark:text-white">Loading...</div>;
 
@@ -213,7 +224,6 @@ const GroupDetails = () => {
        {/* COMPACT HEADER */}
        <div className="flex-none bg-white dark:bg-slate-900 p-3 md:p-6 rounded-xl md:rounded-2xl border border-gray-200 dark:border-slate-800 shadow-sm relative">
          
-         {/* Top Row: Back + Title + Edit Actions */}
          <div className="flex items-center justify-between gap-2 md:gap-4">
            
             {/* Left: Back Button & Title */}
@@ -232,14 +242,13 @@ const GroupDetails = () => {
                             {students.length}
                         </span>
                     </h1>
-                    {/* Admin info hidden on mobile to save space */}
                     <div className="hidden md:flex items-center gap-2 text-sm text-gray-500 dark:text-green-400 mt-1">
                         <Shield size={14} /> <span>Admins: {group.admins.map(a=>a.name).join(', ')}</span>
                     </div>
                 </div>
             </div>
 
-            {/* Right: Actions (Edit/Save) */}
+            {/* Right: Actions */}
             <div className="flex items-center flex-none">
                 {isEditing ? (
                     <div className="flex gap-1 md:gap-3 items-center">
@@ -273,7 +282,6 @@ const GroupDetails = () => {
             </div>
          </div>
          
-         {/* Bottom Row: Add Student (Only show if not editing, collapsed margin on mobile) */}
          {!isEditing && (
              <div className="mt-2 pt-2 md:mt-6 md:pt-6 border-t border-gray-100 dark:border-slate-800 flex justify-end">
                 <form onSubmit={addStudent} className="flex gap-2 w-full md:w-auto">
@@ -316,16 +324,37 @@ const GroupDetails = () => {
                 <tbody className="divide-y divide-gray-100 dark:divide-slate-800">
                     {students.map(s => {
                         const stats = getStudentStats(s._id);
+                        const isRowActive = activeRowId === s._id; // Check if this row is currently clicked
+                        
                         return (
                         <tr key={s._id} className="hover:bg-gray-50 dark:hover:bg-slate-800/50 transition-colors group h-10 md:h-12">
-                            <td className="p-2 md:p-3 sticky left-0 bg-white dark:bg-slate-900 group-hover:bg-gray-50 dark:group-hover:bg-slate-800/50 z-20 border-r border-transparent group-hover:border-gray-100 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">
+                            {/* STUDENT NAME CELL - Now Interactive */}
+                            <td 
+                              onClick={() => handleRowClick(s._id)} 
+                              className="p-2 md:p-3 sticky left-0 bg-white dark:bg-slate-900 group-hover:bg-gray-50 dark:group-hover:bg-slate-800/50 z-20 border-r border-transparent group-hover:border-gray-100 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] cursor-pointer select-none"
+                            >
                                 <div className="flex justify-between items-center gap-1 md:gap-2">
-                                    <div className="truncate min-w-0"><div className="font-medium text-slate-900 dark:text-white text-xs md:text-sm truncate" title={s.name}>{s.name}</div></div>
-                                    <button onClick={() => confirmDeleteStudent(s._id)} className="md:opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 p-1 rounded transition-all" title="Remove Student">
+                                    <div className="truncate min-w-0">
+                                        <div className="font-medium text-slate-900 dark:text-white text-xs md:text-sm truncate" title={s.name}>
+                                            {s.name}
+                                        </div>
+                                    </div>
+                                    <button 
+                                      onClick={(e) => confirmDeleteStudent(s._id, e)} 
+                                      // Conditional Class:
+                                      // Mobile: Opacity 100 if active, 0 otherwise.
+                                      // Desktop (md): Opacity 0 default, 100 on hover.
+                                      className={`
+                                        p-1 rounded transition-all text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20
+                                        ${isRowActive ? 'opacity-100' : 'opacity-0 md:group-hover:opacity-100'}
+                                      `}
+                                      title="Remove Student"
+                                    >
                                         <Trash2 size={12} className="md:w-[14px] md:h-[14px]" />
                                     </button>
                                 </div>
                             </td>
+
                             <td className="p-2 md:p-3 sticky left-[120px] md:left-[160px] bg-white dark:bg-slate-900 group-hover:bg-gray-50 dark:group-hover:bg-slate-800/50 z-20 text-center shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] border-r border-gray-100 dark:border-slate-800">
                                 <span className={`text-[10px] md:text-xs font-bold ${stats.percentage >= 75 ? 'text-emerald-600' : stats.percentage >= 50 ? 'text-amber-600' : 'text-rose-600'}`}>{stats.percentage}%</span>
                             </td>
