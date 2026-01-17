@@ -112,7 +112,7 @@ const Dashboard = () => {
     <div className="relative">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-slate-900 dark:text-white">Dashboard</h1>
+          <h1 className="text-3xl font-bold text-slate-900 dark:text-white">Let's</h1>
           <p className="text-gray-500 dark:text-slate-400 mt-1">Manage your classes and students</p>
         </div>
         
@@ -175,7 +175,7 @@ const Dashboard = () => {
                     <label className="block text-xs font-semibold text-gray-500 uppercase mb-2">Add New Admin</label>
                     <div className="flex gap-2">
                         <input type="email" required placeholder="Email" className="flex-1 px-3 py-2 rounded-lg border border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800 text-sm focus:ring-2 focus:ring-blue-500 outline-none text-slate-900 dark:text-white" value={adminEmail} onChange={(e) => setAdminEmail(e.target.value)} />
-                        <button type="submit" disabled={isAdminLoading} className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-medium text-sm flex items-center gap-2 disabled:opacity-70">
+                        <button type="submit" disabled={isAdminLoading} className="px-2 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-medium text-sm flex items-center gap-2 disabled:opacity-70">
                             {isAdminLoading ? <Loader2 className="animate-spin" size={16} /> : <Plus size={16} />} Add
                         </button>
                     </div>
