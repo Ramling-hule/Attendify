@@ -44,18 +44,24 @@ app.post('/api/groups', requireAuth, async (req, res) => {
   }
 });
 
+// [OPTIMIZED] GET GROUPS FOR DASHBOARD
+// optimization: Added .lean() and .select() to reduce data weight significantly
 app.get('/api/groups', requireAuth, async (req, res) => {
   try {
     const groups = await Group.find({
       $or: [{ admins: req.user.id }, { students: req.user.id }]
-    }).populate('admins', 'name email');
+    })
+    .select('name students admins') // Fetch ONLY fields needed for the card
+    .populate('admins', 'name email') // Needed for the 'Manage Admins' modal
+    .lean(); // Converts Mongoose Documents to plain JSON (Much Faster)
+
     res.json(groups);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-// GET GROUP & STATS (UPDATED FOR STRING STATUS)
+// GET GROUP & STATS (Detailed View)
 app.get('/api/groups/:id', requireAuth, async (req, res) => {
   try {
     if (!mongoose.Types.ObjectId.isValid(req.params.id)) return res.status(400).json({ error: "Invalid Group ID" });
@@ -120,7 +126,7 @@ app.get('/api/attendance/:groupId/history', requireAuth, async (req, res) => {
     res.json(sheets);
 });
 
-// BULK SAVE (UPDATED FOR STRING STATUS & TIMEZONE FIX)
+// BULK SAVE
 app.post('/api/attendance/bulk', requireAuth, async (req, res) => {
   const { groupId, updates } = req.body; 
 
@@ -149,8 +155,6 @@ app.post('/api/attendance/bulk', requireAuth, async (req, res) => {
         }
 
         dayUpdates.forEach(({ studentId, status }) => {
-            // Ensure we save Strings 'Present' or 'Absent'
-            // Handle cases where frontend might accidentally send 1/0 or booleans
             let statusStr = 'Absent';
             if (status === 'Present' || status === 1 || status === true) statusStr = 'Present';
             
@@ -174,10 +178,6 @@ app.post('/api/attendance/bulk', requireAuth, async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
-
-// server/index.js
-
-// ... existing routes ...
 
 // REMOVE ADMIN FROM GROUP
 app.delete('/api/groups/:id/admins/:userId', requireAuth, async (req, res) => {
@@ -220,10 +220,6 @@ app.delete('/api/groups/:id/students/:studentId', requireAuth, async (req, res) 
       $pull: { students: req.params.studentId } 
     });
 
-    // Optional: Delete their attendance records for this group?
-    // Usually better to keep history, but if you want a clean wipe:
-    // await Attendance.updateMany({ group: req.params.id }, { $pull: { records: { student: req.params.studentId } } });
-
     // Emit socket event so UI updates for everyone
     io.to(req.params.id).emit('attendance_updated');
 
@@ -232,8 +228,6 @@ app.delete('/api/groups/:id/students/:studentId', requireAuth, async (req, res) 
     res.status(500).json({ error: error.message });
   }
 });
-
-// ... app.listen ...
 
 // ADD ADMIN
 app.post('/api/groups/:id/admins', requireAuth, async (req, res) => {
