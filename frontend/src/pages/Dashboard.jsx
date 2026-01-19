@@ -7,7 +7,7 @@ import toast from 'react-hot-toast';
 import { BASE_URL } from '../config';
 
 const CACHE_KEY = 'dashboard_groups_data';
-const CACHE_DURATION = 5 * 60 * 1000; // 5 Minutes
+const CACHE_DURATION = 10 * 60 * 1000; // 5 Minutes
 
 const Dashboard = () => {
   const [groups, setGroups] = useState([]);
