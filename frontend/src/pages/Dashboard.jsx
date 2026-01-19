@@ -6,9 +6,12 @@ import { Plus, Users, ArrowRight, BookOpen, UserPlus, X, Loader2, Trash2, Shield
 import toast from 'react-hot-toast'; 
 import { BASE_URL } from '../config';
 
+const CACHE_KEY = 'dashboard_groups_data';
+const CACHE_DURATION = 5 * 60 * 1000; // 5 Minutes
+
 const Dashboard = () => {
   const [groups, setGroups] = useState([]);
-  const [isGroupsLoading, setIsGroupsLoading] = useState(true); // NEW: Loading state
+  const [isGroupsLoading, setIsGroupsLoading] = useState(true);
   const [newGroupName, setNewGroupName] = useState("");
   
   // Modal State
@@ -19,25 +22,50 @@ const Dashboard = () => {
   const { token, user } = useAuth();
   const API_URL = import.meta.env.VITE_API_URL || `${BASE_URL}/api`;
 
-  const fetchGroups = async () => {
-    // Note: We don't set setIsGroupsLoading(true) here to prevent 
-    // the UI from flashing/disappearing when you create a new group.
+  const fetchGroups = async (forceRefresh = false) => {
     try {
+      // 1. FAST RENDER: Check Cache first
+      const cached = sessionStorage.getItem(CACHE_KEY);
+      
+      if (cached && !forceRefresh) {
+        const { data, timestamp } = JSON.parse(cached);
+        
+        // Render cached data immediately
+        setGroups(data);
+        setIsGroupsLoading(false);
+
+        // 2. REDUCE API CALLS: If cache is fresh (< 5 mins), stop here.
+        if (Date.now() - timestamp < CACHE_DURATION) {
+          return; 
+        }
+      }
+
+      // 3. NETWORK FETCH: If no cache, expired, or forced, fetch from API
+      // Note: This endpoint now returns 'studentCount' instead of the full 'students' array
       const res = await axios.get(`${API_URL}/groups`, {
         headers: { Authorization: `Bearer ${token}` }
       });
+      
       setGroups(res.data);
       
-      // Update selected group if it's currently open in the modal
+      // Update Cache
+      sessionStorage.setItem(CACHE_KEY, JSON.stringify({
+        data: res.data,
+        timestamp: Date.now()
+      }));
+      
+      // Update selected group if modal is currently open
       if (selectedGroup) {
         const updatedGroup = res.data.find(g => g._id === selectedGroup._id);
         if (updatedGroup) setSelectedGroup(updatedGroup);
       }
+
     } catch (err) {
       console.error(err);
-      toast.error("Failed to load groups");
+      // Only show error toast if we have NO data to show
+      if (groups.length === 0) toast.error("Failed to load groups");
     } finally {
-      setIsGroupsLoading(false); // Stop loading spinner
+      setIsGroupsLoading(false);
     }
   };
 
@@ -49,7 +77,7 @@ const Dashboard = () => {
         headers: { Authorization: `Bearer ${token}` }
       });
       setNewGroupName("");
-      fetchGroups(); // Refresh list
+      fetchGroups(true); // FORCE REFRESH: We need to see the new group immediately
       toast.success("Group created!");
     } catch (err) {
       toast.error("Failed to create group");
@@ -66,7 +94,7 @@ const Dashboard = () => {
         headers: { Authorization: `Bearer ${token}` }
       });
       setAdminEmail("");
-      fetchGroups(); 
+      fetchGroups(true); // FORCE REFRESH: To update the admin list in UI
       toast.success("Admin added successfully");
     } catch (err) {
       toast.error(err.response?.data?.error || "Failed to add admin");
@@ -75,7 +103,19 @@ const Dashboard = () => {
     }
   };
 
-  // --- CUSTOM TOAST CONFIRMATION FOR REMOVING ADMIN ---
+  const removeAdminApi = async (adminId) => {
+    try {
+        await axios.delete(`${API_URL}/groups/${selectedGroup._id}/admins/${adminId}`, {
+            headers: { Authorization: `Bearer ${token}` }
+        });
+        fetchGroups(true); // FORCE REFRESH: To remove admin from UI
+        toast.success("Admin removed");
+    } catch (err) {
+        toast.error(err.response?.data?.error || "Failed to remove admin");
+    }
+  };
+
+  // --- CUSTOM TOAST CONFIRMATION ---
   const confirmRemoveAdmin = (adminId) => {
     toast((t) => (
       <div className="flex flex-col gap-3 items-center min-w-[200px]">
@@ -102,19 +142,10 @@ const Dashboard = () => {
     ), { duration: 5000, position: 'bottom-center' });
   };
 
-  const removeAdminApi = async (adminId) => {
-    try {
-        await axios.delete(`${API_URL}/groups/${selectedGroup._id}/admins/${adminId}`, {
-            headers: { Authorization: `Bearer ${token}` }
-        });
-        fetchGroups();
-        toast.success("Admin removed");
-    } catch (err) {
-        toast.error(err.response?.data?.error || "Failed to remove admin");
-    }
-  };
-
-  useEffect(() => { fetchGroups(); }, []);
+  // Run on mount
+  useEffect(() => { 
+    fetchGroups(); 
+  }, []);
 
   return (
     <div className="relative">
@@ -156,7 +187,13 @@ const Dashboard = () => {
                     <span className="bg-gray-100 dark:bg-slate-800 text-gray-600 dark:text-slate-300 text-xs px-2 py-1 rounded-full font-medium">Active</span>
                     </div>
                     <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-2 group-hover:text-blue-600 transition-colors">{g.name}</h3>
-                    <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-slate-400 mb-6"><Users size={16} /><span>{g.students?.length || 0} Students</span><span className="text-xs text-gray-400">• {g.admins?.length || 1} Admins</span></div>
+                    
+                    {/* UPDATED LINE: Uses studentCount from backend aggregation */}
+                    <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-slate-400 mb-6">
+                        <Users size={16} />
+                        <span>{g.studentCount || 0} Students</span>
+                        <span className="text-xs text-gray-400">• {g.admins?.length || 1} Admins</span>
+                    </div>
                 </Link>
                 <div className="flex items-center justify-between pt-4 border-t border-gray-100 dark:border-slate-800">
                     <Link to={`/group/${g._id}`} className="flex items-center text-blue-600 dark:text-blue-400 text-sm font-medium gap-1 hover:gap-2 transition-all">View Details <ArrowRight size={16} /></Link>
@@ -177,7 +214,7 @@ const Dashboard = () => {
                 
                 <div className="mb-6 space-y-2 max-h-40 overflow-y-auto custom-scrollbar">
                     <h4 className="text-xs font-semibold text-gray-500 uppercase mb-2">Current Admins</h4>
-                    {selectedGroup.admins.map(admin => {
+                    {selectedGroup.admins?.map(admin => {
                         const isMe = admin._id === user?.id; 
                         return (
                             <div key={admin._id} className="flex justify-between items-center p-2 bg-gray-50 dark:bg-slate-800 rounded-lg border border-gray-100 dark:border-slate-700">
