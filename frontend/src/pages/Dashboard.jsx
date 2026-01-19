@@ -7,7 +7,6 @@ import toast from 'react-hot-toast';
 import { BASE_URL } from '../config';
 
 const CACHE_KEY = 'dashboard_groups_data';
-const CACHE_DURATION = 10 * 60 * 1000; // 5 Minutes
 
 const Dashboard = () => {
   const [groups, setGroups] = useState([]);
@@ -22,30 +21,34 @@ const Dashboard = () => {
   const { token, user } = useAuth();
   const API_URL = import.meta.env.VITE_API_URL || `${BASE_URL}/api`;
 
-  const fetchGroups = async (forceRefresh = false) => {
+  // --- REFACTORED FETCH FUNCTION ---
+  // This now runs a "Stale-While-Revalidate" strategy:
+  // 1. Load cache immediately (fast).
+  // 2. Fetch network data in background (accurate).
+  const fetchGroups = async () => {
     try {
+      let hasCachedData = false;
+
       // 1. FAST RENDER: Check Cache first
       const cached = sessionStorage.getItem(CACHE_KEY);
       
-      if (cached && !forceRefresh) {
-        const { data, timestamp } = JSON.parse(cached);
-        
-        // Render cached data immediately
+      if (cached) {
+        const { data } = JSON.parse(cached);
         setGroups(data);
-        setIsGroupsLoading(false);
-
-        // 2. REDUCE API CALLS: If cache is fresh (< 5 mins), stop here.
-        if (Date.now() - timestamp < CACHE_DURATION) {
-          return; 
-        }
+        setIsGroupsLoading(false); // Stop spinner immediately if we have data
+        hasCachedData = true;
       }
 
-      // 3. NETWORK FETCH: If no cache, expired, or forced, fetch from API
-      // Note: This endpoint now returns 'studentCount' instead of the full 'students' array
+      // If we don't have cached data, show spinner. 
+      // If we DO have cached data, keep spinner hidden for a "silent update".
+      if (!hasCachedData) setIsGroupsLoading(true);
+
+      // 2. NETWORK FETCH: Always fetch fresh data to ensure updates (new groups/counts) are seen
       const res = await axios.get(`${API_URL}/groups`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       
+      // Update state with fresh data
       setGroups(res.data);
       
       // Update Cache
@@ -54,7 +57,7 @@ const Dashboard = () => {
         timestamp: Date.now()
       }));
       
-      // Update selected group if modal is currently open
+      // Update selected group if modal is currently open (live update)
       if (selectedGroup) {
         const updatedGroup = res.data.find(g => g._id === selectedGroup._id);
         if (updatedGroup) setSelectedGroup(updatedGroup);
@@ -62,8 +65,9 @@ const Dashboard = () => {
 
     } catch (err) {
       console.error(err);
-      // Only show error toast if we have NO data to show
-      if (groups.length === 0) toast.error("Failed to load groups");
+      // Only show error toast if we have NO data to show (neither cache nor network)
+      const cached = sessionStorage.getItem(CACHE_KEY);
+      if (!cached && groups.length === 0) toast.error("Failed to load groups");
     } finally {
       setIsGroupsLoading(false);
     }
@@ -77,7 +81,7 @@ const Dashboard = () => {
         headers: { Authorization: `Bearer ${token}` }
       });
       setNewGroupName("");
-      fetchGroups(true); // FORCE REFRESH: We need to see the new group immediately
+      fetchGroups(); // Refresh list to show new group
       toast.success("Group created!");
     } catch (err) {
       toast.error("Failed to create group");
@@ -94,7 +98,7 @@ const Dashboard = () => {
         headers: { Authorization: `Bearer ${token}` }
       });
       setAdminEmail("");
-      fetchGroups(true); // FORCE REFRESH: To update the admin list in UI
+      fetchGroups(); // Refresh to update admin list
       toast.success("Admin added successfully");
     } catch (err) {
       toast.error(err.response?.data?.error || "Failed to add admin");
@@ -108,7 +112,7 @@ const Dashboard = () => {
         await axios.delete(`${API_URL}/groups/${selectedGroup._id}/admins/${adminId}`, {
             headers: { Authorization: `Bearer ${token}` }
         });
-        fetchGroups(true); // FORCE REFRESH: To remove admin from UI
+        fetchGroups(); // Refresh to remove admin from UI
         toast.success("Admin removed");
     } catch (err) {
         toast.error(err.response?.data?.error || "Failed to remove admin");
@@ -188,7 +192,6 @@ const Dashboard = () => {
                     </div>
                     <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-2 group-hover:text-blue-600 transition-colors">{g.name}</h3>
                     
-                    {/* UPDATED LINE: Uses studentCount from backend aggregation */}
                     <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-slate-400 mb-6">
                         <Users size={16} />
                         <span>{g.studentCount || 0} Students</span>
@@ -220,7 +223,6 @@ const Dashboard = () => {
                             <div key={admin._id} className="flex justify-between items-center p-2 bg-gray-50 dark:bg-slate-800 rounded-lg border border-gray-100 dark:border-slate-700">
                                 <div className="text-sm">
                                     <div className="font-medium text-slate-900 dark:text-white flex items-center gap-2">{admin.name} {isMe && <span className="text-[10px] bg-blue-100 text-blue-700 px-1.5 rounded">You</span>}</div>
-                                    {/* <div className="text-xs text-gray-500 dark:text-slate-400">{admin.email}</div> */}
                                 </div>
                                 {isMe ? (
                                     <ShieldAlert size={16} className="text-gray-300" title="You cannot remove yourself" />
