@@ -220,7 +220,7 @@ const Dashboard = () => {
                             <div key={admin._id} className="flex justify-between items-center p-2 bg-gray-50 dark:bg-slate-800 rounded-lg border border-gray-100 dark:border-slate-700">
                                 <div className="text-sm">
                                     <div className="font-medium text-slate-900 dark:text-white flex items-center gap-2">{admin.name} {isMe && <span className="text-[10px] bg-blue-100 text-blue-700 px-1.5 rounded">You</span>}</div>
-                                    <div className="text-xs text-gray-500 dark:text-slate-400">{admin.email}</div>
+                                    {/* <div className="text-xs text-gray-500 dark:text-slate-400">{admin.email}</div> */}
                                 </div>
                                 {isMe ? (
                                     <ShieldAlert size={16} className="text-gray-300" title="You cannot remove yourself" />
