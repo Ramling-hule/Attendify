@@ -44,19 +44,46 @@ app.post('/api/groups', requireAuth, async (req, res) => {
   }
 });
 
-// [OPTIMIZED] GET GROUPS FOR DASHBOARD
-// optimization: Added .lean() and .select() to reduce data weight significantly
 app.get('/api/groups', requireAuth, async (req, res) => {
   try {
-    const groups = await Group.find({
-      $or: [{ admins: req.user.id }, { students: req.user.id }]
-    })
-    .select('name students admins') // Fetch ONLY fields needed for the card
-    .populate('admins', 'name email') // Needed for the 'Manage Admins' modal
-    .lean(); // Converts Mongoose Documents to plain JSON (Much Faster)
+    const groups = await Group.aggregate([
+      // 1. MATCH: Filter groups where the user is an admin
+      // Note: We must cast the string ID to a Mongoose ObjectId for aggregation
+      { 
+        $match: { 
+          admins: new mongoose.Types.ObjectId(req.user.id) 
+        } 
+      },
+
+      // 2. LOOKUP: Populate the admins (Replacing .populate)
+      // Note: Ensure 'users' matches your actual MongoDB collection name for users (usually lowercase plural)
+      {
+        $lookup: {
+          from: 'users', 
+          localField: 'admins',
+          foreignField: '_id',
+          as: 'admins'
+        }
+      },
+
+      // 3. PROJECT: specific fields & CALCULATE student count
+      {
+        $project: {
+          name: 1,
+          // Instead of fetching the array, we just ask the DB for the size
+          studentCount: { $size: { $ifNull: ["$students", []] } }, 
+          
+          // Format admins to match what your frontend expects
+          "admins._id": 1,
+          "admins.name": 1,
+          "admins.email": 1
+        }
+      }
+    ]);
 
     res.json(groups);
   } catch (error) {
+    console.error("Group fetch error:", error);
     res.status(500).json({ error: error.message });
   }
 });
